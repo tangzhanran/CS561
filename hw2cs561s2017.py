@@ -1,3 +1,5 @@
+import random
+
 class Litera:
     def __init__(self, i, g=0, t=0, s=1, v=True):
         self.m_index = i
@@ -30,18 +32,73 @@ class Sentence:
         self.m_literals = literals[:]
         #self.m_neg_literals.append(negliterals)
 
+class Model:
+    def __init__(self, m):
+        self.truth_list = m[:]
+        self.max_satisdied = 0
+        self.falselist = []
+
+    def isModelSatisfied(self, sentence):
+        cnflist = list(sentence.m_clause_set)
+        for ci in cnflist:
+            flag = False
+            for li in ci:
+                if ((self.truth_list[abs(li)-1]) and (li > 0)) or ((not(self.truth_list[abs(li)-1])) and (li < 0)):
+                    flag = True
+                    break
+            if not flag:
+                self.falselist.append(ci)
+            else:
+                self.max_satisdied += 1
+        if self.max_satisdied == len(cnflist):
+            return True
+        return False
+
+    def selectFalseClause(self):
+        index = random.randint(0,len(self.falselist)-1)
+        return self.falselist[index]
+
+    def flipSymbol(self,clause):
+        clauselength = len(clause)
+        i = random.randint(0,clauselength-1)
+        index = abs(clause[i])-1
+        self.truth_list[index] = not self.truth_list[index]
+
+    def flipMaximize(self,clause, sentence):
+        # flip whichever symbol in clause maximizes the number of clauses in sentence
+        # return true if all clauses are satisfied after any single flip
+        # return false if some clauses remain false
+        truthlist = self.truth_list[:]
+        cnflist = list(sentence.m_clause_set)
+        for li in clause:
+            countsatisfied = 0
+            truthlist[abs(li)-1] = not truthlist[abs(li)-1]
+            for ci in cnflist:
+                for sli in ci:
+                    if ((truthlist[abs(sli)-1]) and (sli > 0)) or ((not(truthlist[abs(sli)-1])) and (sli < 0)):
+                        countsatisfied += 1
+                        break
+            if countsatisfied == len(cnflist):
+                self.truth_list = truthlist[:]
+                return True
+            if countsatisfied > self.max_satisdied:
+                max_satisdied = countsatisfied
+                self.truth_list = truthlist[:]
+            truthlist[abs(li)-1] = not truthlist[abs(li)-1]
+        return False
+
 class CNFProcessor:
     def __init__(self):
         self.m_relation = []
        # self.m_literas = []
-        self.m_cnf = Sentence()
+        self.__m_cnf = Sentence()
         self.m_guestnum = 0
         self.m_tablenum = 0
 
-    # ci and cj are tuples represent clause
-    #return 0 if cannot resolve or always true
-    #return a tuple of resolved clause
     def __pl_resolve(self,ci,cj):
+        # ci and cj are tuples represent clause
+        # return 0 if cannot resolve or always true
+        # return a tuple of resolved clause
         resolvelist = []
         result = self.__remove_complement(ci,cj)
         if  result == 0:
@@ -52,10 +109,10 @@ class CNFProcessor:
         t = tuple(resolvelist)
         return t
 
-    # ci and cj are tuples represent clause
-    # return 0 if no complement or more than 1 pair of complement
-    # return a single list with remove result
     def __remove_complement(self, ci, cj):
+        # ci and cj are tuples represent clause
+        # return 0 if no complement or more than 1 pair of complement
+        # return a single list with remove result
         uniqci = tuple(set(ci))
         uniqcj = tuple(set(cj))
         clauselist = []
@@ -75,17 +132,6 @@ class CNFProcessor:
         if count != 1:
             return 0
         return clauselist
-
-    # def __tuple_negate(self, c):
-    #     l = list(c)
-    #     for i in range(len(l)):
-    #         if l[i] < 0:
-    #             l[i] = -l[i]
-    #     t = tuple(l)
-    #     return t
-
-    def __listExtendWithoutDuplicate(self, lstorigin, lstnew):
-        return lstorigin
 
     def parseInput(self, input_path):
         file = open(input_path)
@@ -112,7 +158,7 @@ class CNFProcessor:
                 l = Litera(index,i+1,j+1,1,True)
                 posliterals.append(l)
                 index += 1
-        self.m_cnf.addLiterals(posliterals)
+        self.__m_cnf.addLiterals(posliterals)
 
     def createCNF(self):
         guestnum = self.m_guestnum
@@ -121,34 +167,34 @@ class CNFProcessor:
             tmplist = []
             for j in range(tablenum):
                 for k in range(j+1, tablenum):
-                    t = (-self.m_cnf.m_literals[i*tablenum+k].m_index, -self.m_cnf.m_literals[i*tablenum+j].m_index)
-                    self.m_cnf.m_clause_set.add(t)
-                tmplist.append(self.m_cnf.m_literals[i*tablenum+j].m_index)
+                    t = (-self.__m_cnf.m_literals[i*tablenum+k].m_index, -self.__m_cnf.m_literals[i*tablenum+j].m_index)
+                    self.__m_cnf.m_clause_set.add(t)
+                tmplist.append(self.__m_cnf.m_literals[i*tablenum+j].m_index)
             t = tuple(tmplist)
-            self.m_cnf.m_clause_set.add(t)
+            self.__m_cnf.m_clause_set.add(t)
             del tmplist
         for i in range(guestnum):   #creating cnf from relations
             for j in range(i,guestnum):
                 if self.m_relation[i][j] == 1:
                     for t in range(tablenum):
-                        tu1 = (-self.m_cnf.m_literals[i*tablenum+t].m_index, self.m_cnf.m_literals[j*tablenum+t].m_index)
-                        tu2 = (-self.m_cnf.m_literals[j*tablenum+t].m_index, self.m_cnf.m_literals[i*tablenum+t].m_index)
-                        self.m_cnf.m_clause_set.add(tu1)
-                        self.m_cnf.m_clause_set.add(tu2)
+                        tu1 = (-self.__m_cnf.m_literals[i*tablenum+t].m_index, self.__m_cnf.m_literals[j*tablenum+t].m_index)
+                        tu2 = (-self.__m_cnf.m_literals[j*tablenum+t].m_index, self.__m_cnf.m_literals[i*tablenum+t].m_index)
+                        self.__m_cnf.m_clause_set.add(tu1)
+                        self.__m_cnf.m_clause_set.add(tu2)
                 elif self.m_relation[i][j] == -1:
                     for t in range(tablenum):
-                        leftliteral = -self.m_cnf.m_literals[i * tablenum + t].m_index
-                        rightliteral = -self.m_cnf.m_literals[j * tablenum + t].m_index
+                        leftliteral = -self.__m_cnf.m_literals[i * tablenum + t].m_index
+                        rightliteral = -self.__m_cnf.m_literals[j * tablenum + t].m_index
                         if leftliteral > rightliteral:
                             tmp = leftliteral
                             leftliteral = rightliteral
                             rightliteral = tmp
                         tu = (leftliteral,rightliteral)
-                        self.m_cnf.m_clause_set.add(tu)
+                        self.__m_cnf.m_clause_set.add(tu)
 
     def PLResolution(self):
         # cnfLength = len(self.m_cnf.m_clause_set)
-        clauses = self.m_cnf.m_clause_set.copy()
+        clauses = self.__m_cnf.m_clause_set.copy()
         newClauses = list()
         clauseslist = list(clauses)
         while True:
@@ -168,17 +214,38 @@ class CNFProcessor:
                 return True
             clauseslist.extend(list(tmpnewclauseset))
             #clauseslist = list(set(clauseslist))
-tu1 = (1,2)
-tu2 = (2,1)
-tu3 = (3,4)
-s1 = set()
-s1.add(tu1)
-s1.add(tu3)
-s2 = set(tu2)
-print s2.issubset(s1)
+
+    def WalkSAT(self, max_flips, p=0.5):
+        numofliterals = len(self.__m_cnf.m_literals)
+        modellist = [True for i in range(numofliterals)]
+        model = Model(modellist)
+        for i in range(max_flips):
+            if model.isModelSatisfied(self.__m_cnf):
+                return model
+            clause = model.selectFalseClause()
+            pro = random.random()
+            if pro <= p:
+                #flip symbol
+                model.flipSymbol(clause)
+            else:
+                #flip a symbol maximize the number of satisfied clauses
+                if model.flipMaximize(clause,self.__m_cnf):
+                    return model
+        return False
+
+    def getCNF(self):
+        return self.__m_cnf
 
 processor = CNFProcessor()
-processor.parseInput("Samples test cases\input5.txt")
+processor.parseInput("Samples test cases\input6.txt")
 processor.createCNF()
-print processor.PLResolution()
-print processor.m_relation
+if processor.PLResolution():
+    print "yes"
+    model = processor.WalkSAT(10000,0.5)
+    if model != False:
+        literals = processor.getCNF().m_literals
+        for i in range(len(model.truth_list)):
+            if model.truth_list[i]:
+                print `literals[i].m_guest` + " " + `literals[i].m_table`
+else:
+    print "no"
