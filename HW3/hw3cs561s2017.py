@@ -135,7 +135,7 @@ class NetSolver:
         exi = e.copy()
         bn = e.keys()
         bn += name
-        hidden = self.__exploreHidden(name)
+        hidden = self.__exploreHidden(bn)
         bn += hidden
         bn = list(set(bn))
         bn = self.__sortNodes(bn)
@@ -144,7 +144,7 @@ class NetSolver:
                 exi[name] = "+"
             else:
                 exi[name] = "-"
-            Q.append(self.__Enumerate_All(bn[:],exi))
+            Q.append(self.__Enumerate_All(bn[:],exi.copy()))
             sum += Q[i]
         if val == '+':
             return Q[0]/sum
@@ -169,25 +169,25 @@ class NetSolver:
                 condition += val + i
         if Y in exi:
             if exi[Y] == '+':
-                return self.__net_nodes[Y].getVal(condition) * self.__Enumerate_All(node_queue, exi)
+                return self.__net_nodes[Y].getVal(condition) * self.__Enumerate_All(node_queue[:], exi.copy())
             else:
-                return (1-self.__net_nodes[Y].getVal(condition)) * self.__Enumerate_All(node_queue, exi)
+                return (1-self.__net_nodes[Y].getVal(condition)) * self.__Enumerate_All(node_queue[:], exi.copy())
         else:
             sum = 0
             for i in range(0,2):
                 if i==0:
                     exi[Y] = '+'
-                    sum += self.__net_nodes[Y].getVal(condition) * self.__Enumerate_All(node_queue, exi)
+                    sum += self.__net_nodes[Y].getVal(condition) * self.__Enumerate_All(node_queue[:], exi.copy())
                 else:
                     exi[Y] = '-'
-                    sum += (1-self.__net_nodes[Y].getVal(condition))*self.__Enumerate_All(node_queue,exi)
+                    sum += (1-self.__net_nodes[Y].getVal(condition))*self.__Enumerate_All(node_queue[:],exi.copy())
             return sum
 
     def __sortNodes(self,nodelist):
         # nodelist is a list of node name
         sortedlist = [0 for i in range(0,self.__nodesNum)]
         for i in nodelist:
-            sortedlist[len(nodelist)-self.__net_nodes[i].sortnum-1] = i
+            sortedlist[self.__nodesNum-self.__net_nodes[i].sortnum-1] = i
         result = []
         for i in sortedlist:
             if i != 0:
@@ -213,13 +213,14 @@ class NetSolver:
     def __exploreHidden(self,nodename):
         # return all the node which has higher level of node
         hidden_list = []
-        node = self.__net_nodes[nodename]
-        parents = node.getNodeParents()
-        for i in parents:
-            hidden_list += i
-            hidden = self.__exploreHidden(i)
-            if len(hidden) > 0:
-                hidden_list += hidden
+        for n in nodename:
+            node = self.__net_nodes[n]
+            parents = node.getNodeParents()
+            for i in parents:
+                hidden_list += i
+                hidden = self.__exploreHidden(i)
+                if len(hidden) > 0:
+                    hidden_list += hidden
         return hidden_list
 
     def solve(self, index):
@@ -259,5 +260,6 @@ class NetSolver:
 
 
 solver = NetSolver()
-solver.readFile("Sample test cases\input04.txt")
-print round(solver.solve(0),2)
+solver.readFile("Sample test cases\input11.txt")
+for i in range(0,len(solver.getNetQueries())):
+    print round(solver.solve(i),2)
