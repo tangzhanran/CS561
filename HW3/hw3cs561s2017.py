@@ -1,4 +1,4 @@
-from decimal import getcontext, Decimal
+import re
 
 class Node:
     def __init__(self, n, name="",type=0):  #chance node: type=0, decision node: type=1, utility node: type=2
@@ -26,6 +26,9 @@ class Node:
 
     def getVal(self,key):
         return self.__node_valTable[key]
+
+    def getValTable(self):
+        return self.__node_valTable
 
     def addValTable(self, key, val):
         self.__node_valTable[key] = val
@@ -57,6 +60,8 @@ class NetSolver:
         self.__net_queries = [] #queries
         self.__net_nodes = {}   #all nodes
         self.__nodesNum = 0
+        self.__exProbVal = {}
+        self.__EU = {}
 
     def readFile(self,filepath):
         infile = open(filepath,"r")
@@ -84,6 +89,8 @@ class NetSolver:
                     line = infile.readline().strip('\n')
                     if line=="decision":
                         node.setType(1)
+                        node.addValTable("+" + name,1)
+                        node.addValTable("-" + name,1)
                     else:
                         node.addValTable("+" + name,float(line))
                 else:
@@ -115,6 +122,11 @@ class NetSolver:
             result_list.append(q)
             return result_list
         outcome_node = self.__getLowestNode(node_list)
+        if self.__net_nodes[outcome_node].getNumofParents() == 0:
+            for i in node_list:
+                q = conditionQuery(query[i] + i,{})
+                result_list.append(q)
+            return result_list
         condition_dict = {}
         for i in node_list:
             if i != outcome_node:
@@ -131,6 +143,14 @@ class NetSolver:
         Q = []
         val = X[0]
         name = X[1:]
+        if len(e) == 0 and self.__net_nodes[name].getNumofParents() == 0:
+            if self.__net_nodes[name].getNodeType() == 1:
+                return 1
+            else:
+                if val == '+':
+                    return self.__net_nodes[name].getVal("+" + name)
+                else:
+                    return 1-self.__net_nodes[name].getVal("+" + name)
         sum = 0
         exi = e.copy()
         bn = e.keys()
@@ -168,6 +188,8 @@ class NetSolver:
                 val = exi[i]
                 condition += val + i
         if Y in exi:
+            if self.__net_nodes[Y].getNodeType() == 1:
+                return self.__Enumerate_All(node_queue[:], exi.copy())
             if exi[Y] == '+':
                 return self.__net_nodes[Y].getVal(condition) * self.__Enumerate_All(node_queue[:], exi.copy())
             else:
@@ -231,35 +253,141 @@ class NetSolver:
         querylist_devide = []
         if query[0] == 'P':
             query = query[2:-1]
+            result = self.__generateQueries(query)
+            if len(result) == 0:
+                return 0
+            querylist_multi = result[0][:]
+            if len(result) > 1:
+                querylist_devide = result[1][:]
+            return round(self.__calProb(querylist_multi,querylist_devide),2)
+        elif query[0] == 'E':
+            query = query[3:-1]
+            # vallist = self.__net_nodes['utility'].getValTable().keys()
+            # eu = 0
+            # for val in vallist:
+            #     outcome = self.__changeFormat(val) + query
+            #     result = self.__generateQueries(outcome)
+            #     if len(result) == 0:
+            #         continue
+            #     querylist_multi = result[0][:]
+            #     if len(result) > 1:
+            #         querylist_devide = result[1][:]
+            #     eu += self.__calProb(querylist_multi, querylist_devide)*self.__net_nodes['utility'].getVal(val)
+            eu = self.__calEU(query)
+            self.__EU[query] = eu
+            return round(eu)
+        else:
+            query = query[4:-1]
+            splitquery = query
+            con = ""
             if '|' in query:
                 splitquery = query.split('|')
-                dict_union = {}
-                outcome = splitquery[0].split(',')
-                for i in outcome:
-                    dict_union[i[0:-2]] = i[-1]
-                condition = splitquery[1].split(',')
-                dict_condition = {}
-                for i in condition:
-                    dict_union[i[0:-2]] = i[-1]
-                    dict_condition[i[0:-2]] = i[-1]
-                querylist_multi = self.__rewriteQuery(dict_union)
-                querylist_devide = self.__rewriteQuery(dict_condition)
-            else:
-                dict_union = {}
-                outcome = query.split(',')
-                for i in outcome:
-                    dict_union[i[0:-2]] = i[-1]
-                querylist_multi = self.__rewriteQuery(dict_union)
-            nomi = 1
-            denomi = 1
-            for i in querylist_multi:
-                nomi *= self.__Enumeration_Ask(i.getOutcome(),i.getCondition())
-            for i in querylist_devide:
-                denomi *= self.__Enumeration_Ask(i.getOutcome(),i.getCondition())
-            return nomi/denomi
+                con = splitquery[1]
+                splitquery = splitquery[0]
+            splitquery = splitquery.split(',')
+            vartab = [[] for k in range(len(splitquery))]
+            dim = 0
+            for var in splitquery:
+                for i in range(0,2):
+                    if i == 0:
+                        vartab[dim].append(var+"=+")
+                    else:
+                        vartab[dim].append(var+"=-")
+                dim += 1
+            eutab = []
+            for i in range(0,pow(2,dim)):
+                euquery = ""
+                for j in range(0,len(vartab)):
+                    euquery += vartab[j][(pow(2,j)&i)/pow(2,j)]+","
+                euquery = euquery[:-1]
+                if len(con) > 0:
+                    euquery += "|" + con
+                if self.__EU.has_key(euquery):
+                    eutab.append(self.__EU[euquery])
+                else:
+                    eu = self.__calEU(euquery)
+                    eutab.append(eu)
+                    self.__EU[euquery] = eu
+            meu = max(eutab)
+            return round(meu)
 
+
+    def __generateQueries(self,query):
+        # get nominate and denominate queries from query
+        # return a list of multi and divide
+        result = []
+        if '|' in query:
+            splitquery = query.split('|')
+            dict_union = {}
+            outcome = splitquery[0].split(',')
+            for i in outcome:
+                dict_union[i[0:-2]] = i[-1]
+            condition = splitquery[1].split(',')
+            dict_condition = {}
+            for i in condition:
+                if dict_union.has_key(i[0:-2]):
+                    if i[-1] != dict_union[i[0:-2]]:
+                        return []
+                dict_union[i[0:-2]] = i[-1]
+                dict_condition[i[0:-2]] = i[-1]
+            querylist_multi = self.__rewriteQuery(dict_union)
+            querylist_devide = self.__rewriteQuery(dict_condition)
+            result.append(querylist_multi)
+            result.append(querylist_devide)
+        else:
+            dict_union = {}
+            outcome = query.split(',')
+            for i in outcome:
+                if dict_union.has_key(i[0:-2]):
+                    if i[-1] != dict_union[i[0:-2]]:
+                        return []
+                dict_union[i[0:-2]] = i[-1]
+            querylist_multi = self.__rewriteQuery(dict_union)
+            result.append(querylist_multi)
+        return result
+
+    def __calProb(self,multi,div):
+        # multi is a list of multiply query
+        # div is a list of divided query
+        # return probability
+        nomi = 1
+        denomi = 1
+        for i in multi:
+            nomi *= self.__Enumeration_Ask(i.getOutcome(), i.getCondition())
+        for i in div:
+            denomi *= self.__Enumeration_Ask(i.getOutcome(), i.getCondition())
+        return nomi / denomi
+
+    def __changeFormat(self,str):
+        result = ""
+        sign = str[0]
+        for c in str[1:]:
+            if c == '+' or c == '-':
+                result += "="+sign+","
+                sign = c
+                continue
+            else:
+                result += c
+        result += "="+sign+","
+        return result
+
+    def __calEU(self,query):
+        vallist = self.__net_nodes['utility'].getValTable().keys()
+        eu = 0
+        querylist_multi = []
+        querylist_devide = []
+        for val in vallist:
+            outcome = self.__changeFormat(val) + query
+            result = self.__generateQueries(outcome)
+            if len(result) == 0:
+                continue
+            querylist_multi = result[0][:]
+            if len(result) > 1:
+                querylist_devide = result[1][:]
+            eu += self.__calProb(querylist_multi, querylist_devide) * self.__net_nodes['utility'].getVal(val)
+        return eu
 
 solver = NetSolver()
 solver.readFile("Sample test cases\input11.txt")
 for i in range(0,len(solver.getNetQueries())):
-    print round(solver.solve(i),2)
+    print solver.solve(i)
