@@ -1,4 +1,3 @@
-# import re
 from decimal import Decimal
 
 class Node:
@@ -157,6 +156,9 @@ class NetSolver:
                 else:
                     return 1-self.__net_nodes[name].getVal("+" + name)
         sum = 0
+        ekeys = e.keys()
+        ekeys.append(name)
+        ekeys = self.__sortNodes(ekeys)
         exi = e.copy()
         bn = e.keys()
         bn += name
@@ -164,26 +166,33 @@ class NetSolver:
         bn += hidden
         bn = list(set(bn))
         bn = self.__sortNodes(bn)
+        countdict = self.__countParentTimes(bn)
         for i in range(0,2):
             if i==0:
                 exi[name] = "+"
             else:
                 exi[name] = "-"
-            Q.append(self.__Enumerate_All(bn[:],exi.copy()))
+            Q.append(self.__Enumerate_All(bn[:],exi.copy(),ekeys[:], [], countdict.copy()))
             sum += Q[i]
         if val == '+':
             return Q[0]/sum
         else:
             return Q[1]/sum
 
-    def __Enumerate_All(self, node_queue, exi):
-        # node_queue is a queue of unexplored node in net
+    def __Enumerate_All(self, node_queue, exi, e, newevis, countdict):
+        # node_queue is a list of unexplored node in net
         # exi is a dictionary with all evidences e.g. {E:+,B:-,C:+,A:+}
+        # e is a list of original evidences
+        # newevis is a list of new evidences variable added during calls
+        # countdict is a dictionary shows how much time each node appeared as parent
         # return a probabilty value
         if len(node_queue) == 0:
             return 1
         Y = node_queue[-1]
         node_queue.pop()
+        tag = "".join(node_queue)
+        for keys in e:
+            tag += exi[keys]+keys
         condition = ""
         if self.__net_nodes[Y].getNumofParents() == 0:
             condition = "+" + Y
@@ -192,22 +201,61 @@ class NetSolver:
             for i in parents:
                 val = exi[i]
                 condition += val + i
+            count = len(newevis)
+            index = 0
+            for times in range(0,count):
+                if newevis[index][1:] in parents:
+                    countdict[newevis[index][1:]] -= 1
+                    if countdict[newevis[index][1:]] <= 0:
+                        del newevis[index]
+                    else:
+                        index += 1
+                else:
+                    index += 1
+        if len(newevis) > 0:
+            tag += "".join(newevis)
+        enumprob = 0
         if Y in exi:
-            if self.__net_nodes[Y].getNodeType() == 1:
-                return self.__Enumerate_All(node_queue[:], exi.copy())
-            if exi[Y] == '+':
-                return self.__net_nodes[Y].getVal(condition) * self.__Enumerate_All(node_queue[:], exi.copy())
+            if self.__exProbVal.has_key(tag):
+                enumprob = self.__exProbVal[tag]
             else:
-                return (1-self.__net_nodes[Y].getVal(condition)) * self.__Enumerate_All(node_queue[:], exi.copy())
+                enumprob = self.__Enumerate_All(node_queue[:], exi.copy(), e[:], newevis, countdict)
+                self.__exProbVal[tag] = enumprob
+            if self.__net_nodes[Y].getNodeType() == 1:
+                return enumprob
+            if exi[Y] == '+':
+                return self.__net_nodes[Y].getVal(condition) * enumprob
+            else:
+                return (1-self.__net_nodes[Y].getVal(condition)) * enumprob
         else:
             sum = 0
             for i in range(0,2):
                 if i==0:
+                    postag = tag
+                    posnewevis = newevis[:]
+                    poscountdict = countdict.copy()
                     exi[Y] = '+'
-                    sum += self.__net_nodes[Y].getVal(condition) * self.__Enumerate_All(node_queue[:], exi.copy())
+                    posnewevis.append('+'+Y)
+                    postag += "+" + Y
+                    if self.__exProbVal.has_key(postag):
+                        enumprob = self.__exProbVal[postag]
+                    else:
+                        enumprob = self.__Enumerate_All(node_queue[:], exi.copy(), e[:], posnewevis, poscountdict)
+                        self.__exProbVal[postag] = enumprob
+                    sum += self.__net_nodes[Y].getVal(condition) * enumprob
                 else:
+                    negtag = tag
+                    negnewevis = newevis[:]
+                    negcountdict = countdict.copy()
                     exi[Y] = '-'
-                    sum += (1-self.__net_nodes[Y].getVal(condition))*self.__Enumerate_All(node_queue[:],exi.copy())
+                    negnewevis.append('-' + Y)
+                    negtag += "-" + Y
+                    if self.__exProbVal.has_key(negtag):
+                        enumprob = self.__exProbVal[negtag]
+                    else:
+                        enumprob = self.__Enumerate_All(node_queue[:], exi.copy(),e[:], negnewevis, negcountdict)
+                        self.__exProbVal[negtag] = enumprob
+                    sum += (1-self.__net_nodes[Y].getVal(condition)) * enumprob
             return sum
 
     def __sortNodes(self,nodelist):
@@ -314,8 +362,8 @@ class NetSolver:
                     eutab.append(eu)
                     self.__EU[euquery] = eu
             meu = max(eutab)
-            index = eutab.index(meu)
-            output = eusign[index] + str(int(round(meu)))
+            indexmeu = eutab.index(meu)
+            output = eusign[indexmeu] + str(int(round(meu)))
             if index == len(self.__net_queries) - 1:
                 ofile.write(output)
             else:
@@ -396,8 +444,20 @@ class NetSolver:
             eu += self.__calProb(querylist_multi, querylist_devide) * self.__net_nodes['utility'].getVal(val)
         return eu
 
+    def __countParentTimes(self,nodelist):
+        # Count how many times each node in nodelist appears as parents
+        # return a dictionary of times
+        result_dict = {}
+        for node in nodelist:
+            result_dict[node] = 0
+        for node in nodelist:
+            parents = self.__net_nodes[node].getNodeParents()
+            for p in parents:
+                result_dict[p] += 1
+        return result_dict
+
 solver = NetSolver()
-solver.readFile("input.txt")
+solver.readFile("Sample test cases\input12.txt")
 ofile = open("output.txt", "w")
 for i in range(0,len(solver.getNetQueries())):
     solver.solve(i,ofile)
