@@ -1,4 +1,5 @@
-import re
+# import re
+from decimal import Decimal
 
 class Node:
     def __init__(self, n, name="",type=0):  #chance node: type=0, decision node: type=1, utility node: type=2
@@ -62,6 +63,9 @@ class NetSolver:
         self.__nodesNum = 0
         self.__exProbVal = {}
         self.__EU = {}
+        self.__MEU_List = []
+        self.__EU_List = []
+        self.__prob_List = []
 
     def readFile(self,filepath):
         infile = open(filepath,"r")
@@ -109,6 +113,7 @@ class NetSolver:
                         node.addValTable(tag,float(value[0]))
             line = infile.readline().strip('\n')
         self.__nodesNum = nodecount
+        infile.close()
 
     def __rewriteQuery(self,query):
         #query is a dictionary of query in joint form, separated by ','
@@ -245,7 +250,7 @@ class NetSolver:
                     hidden_list += hidden
         return hidden_list
 
-    def solve(self, index):
+    def solve(self, index, ofile):
         #calculate the indexth query
         query = self.__net_queries[index].split()
         query = "".join(query)
@@ -259,23 +264,19 @@ class NetSolver:
             querylist_multi = result[0][:]
             if len(result) > 1:
                 querylist_devide = result[1][:]
-            return round(self.__calProb(querylist_multi,querylist_devide),2)
+            if index == len(self.__net_queries)-1:
+                ofile.write(str('{:.2f}'.format(Decimal(self.__calProb(querylist_multi,querylist_devide)))))
+            else:
+                ofile.write(str('{:.2f}'.format(Decimal(self.__calProb(querylist_multi, querylist_devide))))+"\n")
         elif query[0] == 'E':
             query = query[3:-1]
-            # vallist = self.__net_nodes['utility'].getValTable().keys()
-            # eu = 0
-            # for val in vallist:
-            #     outcome = self.__changeFormat(val) + query
-            #     result = self.__generateQueries(outcome)
-            #     if len(result) == 0:
-            #         continue
-            #     querylist_multi = result[0][:]
-            #     if len(result) > 1:
-            #         querylist_devide = result[1][:]
-            #     eu += self.__calProb(querylist_multi, querylist_devide)*self.__net_nodes['utility'].getVal(val)
             eu = self.__calEU(query)
             self.__EU[query] = eu
-            return round(eu)
+            # self.__EU_List.append(round(eu))
+            if index == len(self.__net_queries) - 1:
+                ofile.write(str(int(round(eu))))
+            else:
+                ofile.write(str(int(round(eu))) + "\n")
         else:
             query = query[4:-1]
             splitquery = query
@@ -295,11 +296,15 @@ class NetSolver:
                         vartab[dim].append(var+"=-")
                 dim += 1
             eutab = []
+            eusign = []
             for i in range(0,pow(2,dim)):
                 euquery = ""
+                querysign = ""
                 for j in range(0,len(vartab)):
                     euquery += vartab[j][(pow(2,j)&i)/pow(2,j)]+","
+                    querysign += euquery[-2]+" "
                 euquery = euquery[:-1]
+                eusign.append(querysign)
                 if len(con) > 0:
                     euquery += "|" + con
                 if self.__EU.has_key(euquery):
@@ -309,8 +314,12 @@ class NetSolver:
                     eutab.append(eu)
                     self.__EU[euquery] = eu
             meu = max(eutab)
-            return round(meu)
-
+            index = eutab.index(meu)
+            output = eusign[index] + str(int(round(meu)))
+            if index == len(self.__net_queries) - 1:
+                ofile.write(output)
+            else:
+                ofile.write(output + "\n")
 
     def __generateQueries(self,query):
         # get nominate and denominate queries from query
@@ -388,6 +397,8 @@ class NetSolver:
         return eu
 
 solver = NetSolver()
-solver.readFile("Sample test cases\input11.txt")
+solver.readFile("input.txt")
+ofile = open("output.txt", "w")
 for i in range(0,len(solver.getNetQueries())):
-    print solver.solve(i)
+    solver.solve(i,ofile)
+ofile.close()
